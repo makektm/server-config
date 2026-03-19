@@ -142,7 +142,25 @@ sudo systemctl restart smbd
 
 Note: `lpinfo` is in `/usr/sbin/` which may not be in `$PATH` — use the full path or sudo.
 
-### 8. Connect from Windows
+### 8. Connect from Linux
+
+No Samba needed — Linux clients talk directly to the Pi's CUPS server via IPP.
+
+```bash
+sudo lpadmin -p 'LBP2900' \
+  -v 'ipp://192.168.1.186/printers/LBP2900' \
+  -E
+
+# Optional: set as default
+sudo lpadmin -d 'LBP2900'
+
+# Test
+echo "test" | lp
+```
+
+Or via GUI: Settings > Printers > Add Printer — it should auto-discover via Avahi/mDNS. If not, enter the URI `ipp://192.168.1.186/printers/LBP2900` manually.
+
+### 9. Connect from Windows
 
 Settings > Printers > Add Printer. It should auto-discover via Samba/Avahi. If not, manually add: `\\192.168.1.186\LBP2900`
 
