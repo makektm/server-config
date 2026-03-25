@@ -1,0 +1,29 @@
+# systemd service to auto-connect to the C50BT Bluetooth speaker on boot
+# Copy to /etc/systemd/system/bt-auto-connect.service
+#
+# IMPORTANT: Replace AE:EC:81:96:06:B7 with the actual MAC address of your C50BT.
+# Find it with: bluetoothctl devices
+
+[Unit]
+Description=Auto-connect C50BT Bluetooth speaker
+After=bluetooth.target bluealsa.service
+Wants=bluetooth.target bluealsa.service
+
+[Service]
+Type=oneshot
+# Wait for Bluetooth adapter to be ready, then attempt connection
+# Retries a few times since the speaker may take a moment to become available
+ExecStartPre=/bin/sleep 5
+ExecStart=/bin/bash -c '\
+  for i in 1 2 3 4 5; do \
+    bluetoothctl connect AE:EC:81:96:06:B7 && exit 0; \
+    sleep 3; \
+  done; \
+  echo "Failed to connect to C50BT after 5 attempts"; \
+  exit 1'
+RemainAfterExit=yes
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
