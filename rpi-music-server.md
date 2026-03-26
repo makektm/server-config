@@ -241,7 +241,8 @@ Then test:
 - **Free Bandcamp streams are 128kbps** — only purchased tracks play at higher quality (mp3-v0) with cookie auth.
 - **Pi Zero 2 W BT is 4.2** — supports A2DP/SBC codec. Fine for casual listening, not audiophile-grade. The C50BT is a portable speaker so this is a non-issue.
 - **Buffer underruns** — the Pi Zero 2 W's Cortex-A53 is weak. If audio is choppy under load, set CPU governor to performance: `echo performance | sudo tee /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor`
-- **BT disconnect recovery** — Mopidy and Raspotify don't gracefully recover when the C50BT disconnects mid-stream. Restart the service after reconnecting: `sudo systemctl restart mopidy` or `sudo systemctl restart raspotify`.
+- **BlueALSA keep-alive** — without `--keep-alive`, BlueALSA tears down the A2DP transport the instant the last PCM client disconnects (even between tracks). This causes `GStreamer error: Internal data stream error` in Mopidy and cascading WebSocket failures in Iris ("pusher is not connected"). The `bluealsa-override.conf` sets `--keep-alive=5` (seconds) to prevent this.
+- **BT disconnect recovery** — Mopidy and Raspotify don't gracefully recover when the C50BT fully disconnects mid-stream. Restart the service after reconnecting: `sudo systemctl restart mopidy` or `sudo systemctl restart raspotify`.
 - **Two interfaces** — Spotify is controlled from the Spotify app (cast), Bandcamp from the Iris web UI. No unified interface, but both output to the same speaker.
 - **Spotify requires Premium** — free tier does not support Spotify Connect.
 
@@ -368,5 +369,6 @@ All config files are in the `music-server/` directory:
 | `mopidy.conf` | `/etc/mopidy/mopidy.conf` |
 | `raspotify.conf` | `/etc/raspotify/conf` |
 | `raspotify-override.conf` | `/etc/systemd/system/raspotify.service.d/override.conf` |
+| `bluealsa-override.conf` | `/etc/systemd/system/bluealsa.service.d/override.conf` |
 | `bt-auto-connect.service` | `/etc/systemd/system/bt-auto-connect.service` |
 | `setup.sh` | Run once with `sudo bash setup.sh` |

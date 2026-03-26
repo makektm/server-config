@@ -158,7 +158,7 @@ sudo lpadmin -d 'LBP2900'
 echo "test" | lp
 ```
 
-Or via GUI: Settings > Printers > Add Printer — it should auto-discover via Avahi/mDNS. If not, enter the URI `ipp://192.168.1.186/printers/LBP2900` manually.
+**Important:** Do NOT use the Avahi/mDNS auto-discovered printer. CUPS will create an `implicitclass://` backend that causes a broken pipe retry loop (`cfFilterPDFToPDF: Broken pipe` → `universal filter failed`). Always add the printer manually with the explicit `ipp://` URI as shown above.
 
 ### 9. Connect from Windows
 
@@ -183,7 +183,9 @@ Then test print from a Windows machine.
 - **64-bit vs 32-bit** — if you ever rebuild with 64-bit RPi OS and captdriver fails to compile or run, fall back to 32-bit (ARMv7). That's the tested configuration.
 - **No duplex** — the LBP2900 is simplex only, captdriver doesn't change that.
 - **CUPS PPD deprecation warning** — `lpadmin` warns that printer drivers are deprecated in future CUPS versions. Not a concern — the LBP2900 will never support driverless IPP, and captdriver+PPD will keep working. Worst case, pin the CUPS version.
+- **`implicitclass://` on Linux clients** — if a Linux client auto-discovers the printer via Avahi, CUPS may create an `implicitclass://` backend instead of a direct IPP connection. This causes `cfFilterPDFToPDF: Broken pipe` errors in a retry loop. Fix: `sudo lpadmin -p LBP2900 -v 'ipp://192.168.1.186/printers/LBP2900' -E` to force the direct IPP URI.
+- **"bad reply from printer" after power cycle** — after restarting the LBP2900, captdriver may report `CAPT: bad reply from printer, expected A0 E0 xx xx xx xx, got` (empty). The printer needs ~30 seconds to warm up before it can accept CAPT commands. Wait, then restart the job: `sudo lp -i <job-id> -H restart`.
 
-## Current Status (2026-03-18)
+## Current Status (2026-03-26)
 
-Steps 1-7 are complete. Printer is online at `192.168.1.186`, printing from the Pi works (`echo "test" | lp`), and the Samba `LBP2900` share is visible on the network. Step 8 (Windows client setup) is pending — just needs someone to Add Printer → `\\192.168.1.186\LBP2900` from a Windows machine.
+Steps 1-8 are complete. Printer is online at `192.168.1.186`, printing from the Pi and Linux clients works via direct IPP (`ipp://192.168.1.186/printers/LBP2900`). Step 9 (Windows client setup) is pending — just needs someone to Add Printer → `\\192.168.1.186\LBP2900` from a Windows machine.

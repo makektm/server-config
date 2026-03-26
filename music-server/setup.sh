@@ -68,6 +68,11 @@ mkdir -p /etc/systemd/system/raspotify.service.d
 cp "$SCRIPT_DIR/raspotify-override.conf" /etc/systemd/system/raspotify.service.d/override.conf
 echo "  -> /etc/systemd/system/raspotify.service.d/override.conf"
 
+# BlueALSA systemd override (keep-alive prevents transport teardown between tracks)
+mkdir -p /etc/systemd/system/bluealsa.service.d
+cp "$SCRIPT_DIR/bluealsa-override.conf" /etc/systemd/system/bluealsa.service.d/override.conf
+echo "  -> /etc/systemd/system/bluealsa.service.d/override.conf"
+
 # bt-auto-connect service — substitute the MAC address
 sed "s/XX:XX:XX:XX:XX:XX/$C50BT_MAC/g" "$SCRIPT_DIR/bt-auto-connect.service" \
   > /etc/systemd/system/bt-auto-connect.service
