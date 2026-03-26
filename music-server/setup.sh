@@ -43,8 +43,8 @@ fi
 
 # --- 3. Mopidy extensions ---
 echo "[3/7] Installing Mopidy-Bandcamp and Mopidy-Iris..."
-pip3 install --break-system-packages Mopidy-Bandcamp Mopidy-Iris 2>/dev/null \
-  || pip3 install Mopidy-Bandcamp Mopidy-Iris
+pip3 install --break-system-packages Mopidy-Bandcamp Mopidy-Iris Mopidy-ALSAMixer 2>/dev/null \
+  || pip3 install Mopidy-Bandcamp Mopidy-Iris Mopidy-ALSAMixer
 
 # --- 4. Copy config files ---
 echo "[4/7] Copying configuration files..."
@@ -89,6 +89,18 @@ systemctl daemon-reload
 
 systemctl enable bluealsa
 systemctl restart bluealsa
+
+# Initialize the softvol "BTVolume" ALSA control before starting Mopidy.
+# softvol is lazy — the control only exists after audio first plays through it.
+# Without this, Mopidy-ALSAMixer can't find the control and the volume slider won't appear.
+if bluetoothctl info "$C50BT_MAC" 2>/dev/null | grep -q "Connected: yes"; then
+  aplay -D btvolume /usr/share/sounds/alsa/Front_Center.wav 2>/dev/null || true
+  echo "  Initialized BTVolume softvol control."
+else
+  echo "  WARNING: C50BT not connected — BTVolume control not initialized."
+  echo "  After pairing, run: aplay -D btvolume /usr/share/sounds/alsa/Front_Center.wav"
+  echo "  Then restart Mopidy: sudo systemctl restart mopidy"
+fi
 
 systemctl enable mopidy
 systemctl restart mopidy

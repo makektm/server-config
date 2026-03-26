@@ -47,8 +47,10 @@ Mopidy-Spotify v5.0 moved past the deprecated libspotify, but it's alpha quality
 
 ```
 Raspotify (librespot) ──→ ALSA "btspeaker" PCM ──→ BlueALSA ──→ Bluetooth A2DP ──→ C50BT
-Mopidy (GStreamer)     ──→ ALSA "btspeaker" PCM ──→ BlueALSA ──→ Bluetooth A2DP ──→ C50BT
+Mopidy (GStreamer)     ──→ queue2 (5MB buffer) ──→ ALSA "btvolume" (softvol) ──→ "btspeaker" ──→ BlueALSA ──→ C50BT
 ```
+
+Mopidy uses a `queue2` buffer to absorb WiFi latency, and a `softvol` ALSA plugin (`btvolume`) for volume control. The softvol sits after the buffer, so volume changes are instant.
 
 BlueALSA is single-stream — only one app can use the speaker at a time. Since Spotify and Bandcamp won't play simultaneously, this is fine.
 
@@ -241,6 +243,7 @@ Then test:
 - **Free Bandcamp streams are 128kbps** — only purchased tracks play at higher quality (mp3-v0) with cookie auth.
 - **Pi Zero 2 W BT is 4.2** — supports A2DP/SBC codec. Fine for casual listening, not audiophile-grade. The C50BT is a portable speaker so this is a non-issue.
 - **Buffer underruns** — the Pi Zero 2 W's Cortex-A53 is weak. If audio is choppy under load, set CPU governor to performance: `echo performance | sudo tee /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor`
+- **softvol lazy initialization** — the `BTVolume` ALSA mixer control is created by `softvol` only when audio first plays through `btvolume`. If Mopidy starts before this, the volume slider won't appear in Iris. Fix: `aplay -D btvolume /usr/share/sounds/alsa/Front_Center.wav` then restart Mopidy. The setup script handles this automatically.
 - **BlueALSA keep-alive** — without `--keep-alive`, BlueALSA tears down the A2DP transport the instant the last PCM client disconnects (even between tracks). This causes `GStreamer error: Internal data stream error` in Mopidy and cascading WebSocket failures in Iris ("pusher is not connected"). The `bluealsa-override.conf` sets `--keep-alive=5` (seconds) to prevent this.
 - **BT disconnect recovery** — Mopidy and Raspotify don't gracefully recover when the C50BT fully disconnects mid-stream. Restart the service after reconnecting: `sudo systemctl restart mopidy` or `sudo systemctl restart raspotify`.
 - **Two interfaces** — Spotify is controlled from the Spotify app (cast), Bandcamp from the Iris web UI. No unified interface, but both output to the same speaker.
