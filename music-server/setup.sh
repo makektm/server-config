@@ -78,6 +78,19 @@ sed "s/XX:XX:XX:XX:XX:XX/$C50BT_MAC/g" "$SCRIPT_DIR/bt-auto-connect.service" \
   > /etc/systemd/system/bt-auto-connect.service
 echo "  -> /etc/systemd/system/bt-auto-connect.service (MAC: $C50BT_MAC)"
 
+# bt-softvol-init service — initializes BTVolume ALSA control on boot
+cp "$SCRIPT_DIR/bt-softvol-init.service" /etc/systemd/system/bt-softvol-init.service
+echo "  -> /etc/systemd/system/bt-softvol-init.service"
+
+# Mopidy systemd override — wait for softvol init before starting
+mkdir -p /etc/systemd/system/mopidy.service.d
+cat > /etc/systemd/system/mopidy.service.d/override.conf <<'MOPIDY_OVERRIDE'
+[Unit]
+After=bt-softvol-init.service
+Wants=bt-softvol-init.service
+MOPIDY_OVERRIDE
+echo "  -> /etc/systemd/system/mopidy.service.d/override.conf"
+
 # --- 5. Add mopidy user to bluetooth group ---
 echo "[5/7] Configuring permissions..."
 usermod -aG bluetooth mopidy
@@ -90,18 +103,7 @@ systemctl daemon-reload
 systemctl enable bluealsa
 systemctl restart bluealsa
 
-# Initialize the softvol "BTVolume" ALSA control before starting Mopidy.
-# softvol is lazy — the control only exists after audio first plays through it.
-# Without this, Mopidy-ALSAMixer can't find the control and the volume slider won't appear.
-if bluetoothctl info "$C50BT_MAC" 2>/dev/null | grep -q "Connected: yes"; then
-  aplay -D btvolume /usr/share/sounds/alsa/Front_Center.wav 2>/dev/null || true
-  echo "  Initialized BTVolume softvol control."
-else
-  echo "  WARNING: C50BT not connected — BTVolume control not initialized."
-  echo "  After pairing, run: aplay -D btvolume /usr/share/sounds/alsa/Front_Center.wav"
-  echo "  Then restart Mopidy: sudo systemctl restart mopidy"
-fi
-
+systemctl enable bt-softvol-init
 systemctl enable mopidy
 systemctl restart mopidy
 

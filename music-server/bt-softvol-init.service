@@ -1,0 +1,20 @@
+# Initialize the softvol "BTVolume" ALSA control on boot
+# softvol is lazy — the control only exists after audio first plays through it.
+# Without this, Mopidy-ALSAMixer can't find the control and the volume slider
+# won't appear in Iris.
+#
+# Copy to /etc/systemd/system/bt-softvol-init.service
+
+[Unit]
+Description=Initialize BTVolume softvol ALSA control
+After=bt-auto-connect.service
+Requires=bt-auto-connect.service
+Before=mopidy.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/aplay -D btvolume /usr/share/sounds/alsa/Front_Center.wav
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target
