@@ -43,8 +43,8 @@ fi
 
 # --- 3. Mopidy extensions ---
 echo "[3/7] Installing Mopidy-Bandcamp and Mopidy-Iris..."
-pip3 install --break-system-packages Mopidy-Bandcamp Mopidy-Iris Mopidy-ALSAMixer 2>/dev/null \
-  || pip3 install Mopidy-Bandcamp Mopidy-Iris Mopidy-ALSAMixer
+pip3 install --break-system-packages Mopidy-Bandcamp Mopidy-Iris Mopidy-ALSAMixer Mopidy-YouTube yt-dlp 2>/dev/null \
+  || pip3 install Mopidy-Bandcamp Mopidy-Iris Mopidy-ALSAMixer Mopidy-YouTube yt-dlp
 
 # --- 4. Copy config files ---
 echo "[4/7] Copying configuration files..."
@@ -91,13 +91,31 @@ Wants=bt-softvol-init.service
 MOPIDY_OVERRIDE
 echo "  -> /etc/systemd/system/mopidy.service.d/override.conf"
 
-# --- 5. Add mopidy user to bluetooth group ---
-echo "[5/7] Configuring permissions..."
+# --- 5. Prefer ethernet over WiFi ---
+echo "[5/8] Configuring network (prefer ethernet over WiFi)..."
+
+# Dispatcher script: disable WiFi when eth0 is up, re-enable when down
+cp "$SCRIPT_DIR/prefer-ethernet.sh" /etc/NetworkManager/dispatcher.d/99-prefer-ethernet
+chmod 755 /etc/NetworkManager/dispatcher.d/99-prefer-ethernet
+echo "  -> /etc/NetworkManager/dispatcher.d/99-prefer-ethernet"
+
+# Set eth0 to static IP 192.168.1.186 so the Pi keeps the same address
+# whether connected via ethernet or WiFi
+nmcli connection modify netplan-eth0 \
+  ipv4.method manual \
+  ipv4.addresses 192.168.1.186/24 \
+  ipv4.gateway 192.168.1.254 \
+  ipv4.dns "192.168.1.254" 2>/dev/null \
+  && echo "  eth0 set to static IP 192.168.1.186" \
+  || echo "  (eth0 not present — skipped static IP config)"
+
+# --- 6. Add mopidy user to bluetooth group ---
+echo "[6/8] Configuring permissions..."
 usermod -aG bluetooth mopidy
 echo "  Added mopidy user to bluetooth group."
 
-# --- 6. Enable services ---
-echo "[6/7] Enabling services..."
+# --- 7. Enable services ---
+echo "[7/8] Enabling services..."
 systemctl daemon-reload
 
 systemctl enable bluealsa
@@ -119,9 +137,9 @@ else
   echo "  or manually enable: sudo systemctl enable bt-auto-connect"
 fi
 
-# --- 7. Done ---
+# --- 8. Done ---
 echo ""
-echo "[7/7] Setup complete!"
+echo "[8/8] Setup complete!"
 echo ""
 echo "=== NEXT STEPS ==="
 echo ""
