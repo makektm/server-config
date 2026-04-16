@@ -3,7 +3,7 @@
 # Run on the Pi as: sudo bash setup.sh
 #
 # Installs: BlueALSA (Bluetooth audio via ALSA), Raspotify (Spotify Connect),
-#           Mopidy + Bandcamp + Iris (Bandcamp streaming with web UI)
+#           Mopidy + Bandcamp + Spotify + Iris (music streaming with web UI)
 #
 # Prerequisites:
 #   - Raspberry Pi OS Lite 32-bit (trixie/ARMv7) already running
@@ -25,7 +25,7 @@ if [ "$EUID" -ne 0 ]; then
 fi
 
 # --- 1. System packages ---
-echo "[1/7] Installing system packages..."
+echo "[1/9] Installing system packages..."
 apt update
 apt install -y \
   bluez \
@@ -34,20 +34,43 @@ apt install -y \
   python3-pip
 
 # --- 2. Raspotify ---
-echo "[2/7] Installing Raspotify..."
+echo "[2/9] Installing Raspotify..."
 if ! command -v raspotify &> /dev/null && ! systemctl list-unit-files | grep -q raspotify; then
   curl -sL https://dtcooper.github.io/raspotify/install.sh | sh
 else
   echo "  Raspotify already installed, skipping."
 fi
 
-# --- 3. Mopidy extensions ---
-echo "[3/7] Installing Mopidy-Bandcamp and Mopidy-Iris..."
-pip3 install --break-system-packages Mopidy-Bandcamp Mopidy-Iris Mopidy-ALSAMixer Mopidy-YouTube yt-dlp 2>/dev/null \
-  || pip3 install Mopidy-Bandcamp Mopidy-Iris Mopidy-ALSAMixer Mopidy-YouTube yt-dlp
+# --- 3. GStreamer Spotify plugin (for Mopidy-Spotify audio playback) ---
+echo "[3/9] Installing gst-plugin-spotify..."
+GST_SPOTIFY_DEB="gst-plugin-spotify_0.15.0.alpha.1-4_armhf.deb"
+GST_SPOTIFY_URL="https://github.com/kingosticks/gst-plugins-rs-build/releases/download/gst-plugin-spotify_0.15.0-alpha.1-4/$GST_SPOTIFY_DEB"
+if ! gst-inspect-1.0 spotifyaudiosrc &>/dev/null; then
+  wget -q -O "/tmp/$GST_SPOTIFY_DEB" "$GST_SPOTIFY_URL"
+  # --force-depends: the .deb expects libglib2.0-0 but trixie renamed it to libglib2.0-0t64
+  dpkg --force-depends -i "/tmp/$GST_SPOTIFY_DEB"
+  rm -f "/tmp/$GST_SPOTIFY_DEB"
+  echo "  gst-plugin-spotify installed."
+else
+  echo "  gst-plugin-spotify already installed, skipping."
+fi
 
-# --- 4. Copy config files ---
-echo "[4/7] Copying configuration files..."
+# --- 4. Mopidy extensions ---
+# Mopidy-Spotify 5.x requires Mopidy 4.x (pip), which replaces the apt Mopidy 3.x.
+# We first upgrade typing-extensions (needed by pydantic/Mopidy 4.x) using --target
+# to avoid pip refusing to uninstall the Debian-managed version, then install everything.
+echo "[4/9] Installing Mopidy extensions..."
+pip3 install --break-system-packages \
+  --target=/usr/local/lib/python3.13/dist-packages \
+  "typing-extensions>=4.14.1"
+# Iris: install from develop branch (has Mopidy 4.x compat fixes not yet released)
+pip3 install --break-system-packages \
+  Mopidy-Bandcamp Mopidy-ALSAMixer Mopidy-MPD==4.0.0a4 \
+  Mopidy-Spotify==5.0.0a7 \
+  "git+https://github.com/jaedb/Iris.git@develop"
+
+# --- 5. Copy config files ---
+echo "[5/9] Copying configuration files..."
 
 # ALSA config — substitute MAC address
 sed "s/XX:XX:XX:XX:XX:XX/$C50BT_MAC/g" "$SCRIPT_DIR/asound.conf" \
@@ -57,6 +80,21 @@ echo "  -> /etc/asound.conf (MAC: $C50BT_MAC)"
 # Mopidy config
 cp "$SCRIPT_DIR/mopidy.conf" /etc/mopidy/mopidy.conf
 echo "  -> /etc/mopidy/mopidy.conf"
+
+# Spotify secrets (conf.d overlay — not tracked in git)
+mkdir -p /etc/mopidy/conf.d
+if [ ! -f /etc/mopidy/conf.d/spotify-secrets.conf ]; then
+  cat > /etc/mopidy/conf.d/spotify-secrets.conf <<'SPOTIFY_SECRETS'
+[spotify]
+client_id = PASTE_YOUR_CLIENT_ID_HERE
+client_secret = PASTE_YOUR_CLIENT_SECRET_HERE
+SPOTIFY_SECRETS
+  chown mopidy:audio /etc/mopidy/conf.d/spotify-secrets.conf
+  chmod 640 /etc/mopidy/conf.d/spotify-secrets.conf
+  echo "  -> /etc/mopidy/conf.d/spotify-secrets.conf (EDIT THIS — add your Spotify credentials)"
+else
+  echo "  -> /etc/mopidy/conf.d/spotify-secrets.conf already exists, preserving."
+fi
 
 # Raspotify config
 mkdir -p /etc/raspotify
@@ -82,17 +120,24 @@ echo "  -> /etc/systemd/system/bt-auto-connect.service (MAC: $C50BT_MAC)"
 cp "$SCRIPT_DIR/bt-softvol-init.service" /etc/systemd/system/bt-softvol-init.service
 echo "  -> /etc/systemd/system/bt-softvol-init.service"
 
-# Mopidy systemd override — wait for softvol init before starting
+# Mopidy systemd override:
+#  - Use pip-installed mopidy 4.x binary (not apt's 3.x at /usr/bin/mopidy)
+#  - Include /etc/mopidy/conf.d for secrets overlay (spotify credentials)
+#  - Wait for softvol init before starting
 mkdir -p /etc/systemd/system/mopidy.service.d
 cat > /etc/systemd/system/mopidy.service.d/override.conf <<'MOPIDY_OVERRIDE'
 [Unit]
 After=bt-softvol-init.service
 Wants=bt-softvol-init.service
+
+[Service]
+ExecStart=
+ExecStart=/usr/local/bin/mopidy --config /usr/share/mopidy/conf.d:/etc/mopidy/conf.d:/etc/mopidy/mopidy.conf
 MOPIDY_OVERRIDE
 echo "  -> /etc/systemd/system/mopidy.service.d/override.conf"
 
-# --- 5. Prefer ethernet over WiFi ---
-echo "[5/8] Configuring network (prefer ethernet over WiFi)..."
+# --- 6. Prefer ethernet over WiFi ---
+echo "[6/9] Configuring network (prefer ethernet over WiFi)..."
 
 # Dispatcher script: disable WiFi when eth0 is up, re-enable when down
 cp "$SCRIPT_DIR/prefer-ethernet.sh" /etc/NetworkManager/dispatcher.d/99-prefer-ethernet
@@ -109,13 +154,13 @@ nmcli connection modify netplan-eth0 \
   && echo "  eth0 set to static IP 192.168.1.186" \
   || echo "  (eth0 not present — skipped static IP config)"
 
-# --- 6. Add mopidy user to bluetooth group ---
-echo "[6/8] Configuring permissions..."
+# --- 7. Add mopidy user to bluetooth group ---
+echo "[7/9] Configuring permissions..."
 usermod -aG bluetooth mopidy
 echo "  Added mopidy user to bluetooth group."
 
-# --- 7. Enable services ---
-echo "[7/8] Enabling services..."
+# --- 8. Enable services ---
+echo "[8/9] Enabling services..."
 systemctl daemon-reload
 
 systemctl enable bluealsa
@@ -137,9 +182,9 @@ else
   echo "  or manually enable: sudo systemctl enable bt-auto-connect"
 fi
 
-# --- 8. Done ---
+# --- 9. Done ---
 echo ""
-echo "[8/8] Setup complete!"
+echo "[9/9] Setup complete!"
 echo ""
 echo "=== NEXT STEPS ==="
 echo ""
@@ -159,15 +204,22 @@ echo ""
 echo "2. TEST AUDIO:"
 echo "   aplay -D btspeaker /usr/share/sounds/alsa/Front_Center.wav"
 echo ""
-echo "3. TEST SPOTIFY:"
+echo "3. CONFIGURE SPOTIFY (in Mopidy):"
+echo "   a. Get client_id + client_secret at https://mopidy.com/ext/spotify/#authentication"
+echo "   b. Edit /etc/mopidy/mopidy.conf → [spotify] section"
+echo "   c. sudo systemctl restart mopidy"
+echo "   d. Check logs: journalctl -u mopidy -f (look for OAuth prompt on first run)"
+echo ""
+echo "4. TEST SPOTIFY CONNECT (Raspotify):"
 echo "   Open Spotify on your phone → Devices → 'MakeKTM Pi'"
 echo ""
-echo "4. TEST BANDCAMP:"
+echo "5. TEST BANDCAMP + SPOTIFY (Iris):"
 echo "   Open http://192.168.1.186:6680/iris in a browser"
+echo "   Search for Spotify tracks, albums, playlists"
 echo ""
-echo "5. UPDATE C50BT MAC (if not already done):"
+echo "6. UPDATE C50BT MAC (if not already done):"
 echo "   Edit C50BT_MAC at the top of this script, then re-run it."
 echo ""
-echo "6. VERIFY PRINT SERVER STILL WORKS:"
+echo "7. VERIFY PRINT SERVER STILL WORKS:"
 echo "   lpstat -p"
 echo "   echo 'test' | lp"
