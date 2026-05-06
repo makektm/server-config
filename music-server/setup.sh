@@ -69,6 +69,16 @@ pip3 install --break-system-packages \
   Mopidy-Spotify==5.0.0a7 \
   "git+https://github.com/jaedb/Iris.git@develop"
 
+# Patch Mopidy-Bandcamp: pydantic v2 rejects musicbrainz_id="" (empty string is not a
+# valid UUID). Replace with None. Re-apply after upgrading Mopidy-Bandcamp.
+BANDCAMP_LIB=$(python3 -c "import mopidy_bandcamp; import os; print(os.path.dirname(mopidy_bandcamp.__file__))" 2>/dev/null)/library.py
+if [ -f "$BANDCAMP_LIB" ]; then
+  sed -i 's/musicbrainz_id=""/musicbrainz_id=None/g' "$BANDCAMP_LIB"
+  echo "  Patched mopidy-bandcamp: musicbrainz_id=\"\" -> None"
+else
+  echo "  WARNING: mopidy-bandcamp library.py not found at $BANDCAMP_LIB — patch skipped"
+fi
+
 # --- 5. Copy config files ---
 echo "[5/9] Copying configuration files..."
 

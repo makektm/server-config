@@ -28,7 +28,7 @@ Mopidy-Spotify v5.0 moved past the deprecated libspotify, but it's alpha quality
 | Print/music server | Raspberry Pi Zero 2 W |
 | Printer | Canon LBP2900 (USB) — see [print server doc](rpi-print-server.md) |
 | Speaker | C50BT (Bluetooth A2DP) |
-| Network | WiFi (192.168.1.186) |
+| Network | USB ethernet (192.168.1.186), Realtek USB 10/100/1000 via `cdc_ether` |
 
 ## Software Stack
 
@@ -50,7 +50,7 @@ Raspotify (librespot) ──→ ALSA "btspeaker" PCM ──→ BlueALSA ──�
 Mopidy (GStreamer)     ──→ queue2 (5MB buffer) ──→ ALSA "btvolume" (softvol) ──→ "btspeaker" ──→ BlueALSA ──→ C50BT
 ```
 
-Mopidy uses a `queue2` buffer to absorb WiFi latency, and a `softvol` ALSA plugin (`btvolume`) for volume control. The softvol sits after the buffer, so volume changes are instant.
+Mopidy uses a `queue2` buffer and a `softvol` ALSA plugin (`btvolume`) for volume control. The softvol sits after the buffer, so volume changes are instant.
 
 BlueALSA is single-stream — only one app can use the speaker at a time. Since Spotify and Bandcamp won't play simultaneously, this is fine.
 
@@ -244,7 +244,8 @@ Then test:
 - **Pi Zero 2 W BT is 4.2** — supports A2DP/SBC codec. Fine for casual listening, not audiophile-grade. The C50BT is a portable speaker so this is a non-issue.
 - **Buffer underruns** — the Pi Zero 2 W's Cortex-A53 is weak. If audio is choppy under load, set CPU governor to performance: `echo performance | sudo tee /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor`
 - **softvol lazy initialization** — the `BTVolume` ALSA mixer control is created by `softvol` only when audio first plays through `btvolume`. If Mopidy starts before this, the volume slider won't appear in Iris. Fix: `aplay -D btvolume /usr/share/sounds/alsa/Front_Center.wav` then restart Mopidy. The setup script handles this automatically.
-- **BlueALSA keep-alive** — without `--keep-alive`, BlueALSA tears down the A2DP transport the instant the last PCM client disconnects (even between tracks). This causes `GStreamer error: Internal data stream error` in Mopidy and cascading WebSocket failures in Iris ("pusher is not connected"). The `bluealsa-override.conf` sets `--keep-alive=5` (seconds) to prevent this.
+- **BlueALSA keep-alive** — without `--keep-alive`, BlueALSA tears down the A2DP transport the instant the last PCM client disconnects (even between tracks). This causes `GStreamer error: Internal data stream error` in Mopidy and cascading WebSocket failures in Iris ("pusher is not connected"). The `bluealsa-override.conf` sets `--keep-alive=30` (seconds). After pausing audio, the BT transport stays open for 30 seconds — resuming within that window is instant. Resuming after 30+ seconds requires A2DP renegotiation (~4 second delay before audio starts).
+- **Mopidy-Bandcamp pydantic UUID crash** — Bandcamp returns artists with an empty `musicbrainz_id`. pydantic v2 (used by Mopidy 4.x) rejects `""` as an invalid UUID, causing a `ValidationError` that drops the active audio stream. `setup.sh` patches `library.py` in-place replacing `musicbrainz_id=""` with `musicbrainz_id=None`. Re-apply the patch after upgrading `Mopidy-Bandcamp`.
 - **BT disconnect recovery** — Mopidy and Raspotify don't gracefully recover when the C50BT fully disconnects mid-stream. Restart the service after reconnecting: `sudo systemctl restart mopidy` or `sudo systemctl restart raspotify`.
 - **Two interfaces** — Spotify is controlled from the Spotify app (cast), Bandcamp from the Iris web UI. No unified interface, but both output to the same speaker.
 - **Spotify requires Premium** — free tier does not support Spotify Connect.
