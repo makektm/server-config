@@ -244,6 +244,8 @@ Then test:
 - **Pi Zero 2 W BT is 4.2** — supports A2DP/SBC codec. Fine for casual listening, not audiophile-grade. The C50BT is a portable speaker so this is a non-issue.
 - **Buffer underruns** — the Pi Zero 2 W's Cortex-A53 is weak. If audio is choppy under load, set CPU governor to performance: `echo performance | sudo tee /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor`
 - **softvol lazy initialization** — the `BTVolume` ALSA mixer control is created by `softvol` only when audio first plays through `btvolume`. If Mopidy starts before this, the volume slider won't appear in Iris. Fix: `aplay -D btvolume /usr/share/sounds/alsa/Front_Center.wav` then restart Mopidy. The setup script handles this automatically.
+- **Mopidy disables failed extensions for the whole session** — when `Mopidy-ALSAMixer` can't find `BTVolume` at startup, Mopidy logs `Mixer (AlsaMixer) initialization error` and *permanently* disables the extension (falls back to `mixer = software`). The control reappearing later does NOT recover it — only `systemctl restart mopidy` does. This makes the softvol init race especially painful: one missed boot and the Iris volume slider is gone until the next manual restart.
+- **Boot race: bluealsa post-hook can start Mopidy too early** — `bluealsa-override.conf`'s `ExecStartPost` runs `systemctl try-restart mopidy` (was `restart` until Nov 2026 — `restart` would START Mopidy at boot before `bt-softvol-init` had a chance to create `BTVolume`, triggering the disabled-extension trap above). `try-restart` is a no-op when Mopidy isn't yet active, so boot ordering (`mopidy.service After=bt-softvol-init.service`) takes over. The post-hook still bounces Mopidy on runtime BlueALSA restarts, which is its actual purpose.
 - **BlueALSA keep-alive** — without `--keep-alive`, BlueALSA tears down the A2DP transport the instant the last PCM client disconnects (even between tracks). This causes `GStreamer error: Internal data stream error` in Mopidy and cascading WebSocket failures in Iris ("pusher is not connected"). The `bluealsa-override.conf` sets `--keep-alive=30` (seconds). After pausing audio, the BT transport stays open for 30 seconds — resuming within that window is instant. Resuming after 30+ seconds requires A2DP renegotiation (~4 second delay before audio starts).
 - **Mopidy-Bandcamp pydantic UUID crash** — Bandcamp returns artists with an empty `musicbrainz_id`. pydantic v2 (used by Mopidy 4.x) rejects `""` as an invalid UUID, causing a `ValidationError` that drops the active audio stream. `setup.sh` patches `library.py` in-place replacing `musicbrainz_id=""` with `musicbrainz_id=None`. Re-apply the patch after upgrading `Mopidy-Bandcamp`.
 - **BT disconnect recovery** — Mopidy and Raspotify don't gracefully recover when the C50BT fully disconnects mid-stream. Restart the service after reconnecting: `sudo systemctl restart mopidy` or `sudo systemctl restart raspotify`.
@@ -338,6 +340,29 @@ journalctl -u raspotify --no-pager -n 30
 
 # Make sure your phone/laptop is on the same WiFi network as the Pi (192.168.1.x)
 ```
+
+### Iris volume slider missing
+The `Mopidy-ALSAMixer` extension failed to find `BTVolume` at startup and Mopidy disabled it for the session. Diagnose:
+```bash
+# Mopidy mixer state — null means no mixer is loaded
+curl -s -X POST http://127.0.0.1:6680/mopidy/rpc \
+  -H 'Content-Type: application/json' \
+  -d '{"jsonrpc":"2.0","id":1,"method":"core.mixer.get_volume"}'
+# {"result":null}  → broken
+# {"result":42}    → working
+
+# Confirm the ALSA control exists now
+amixer -c 0 sget BTVolume
+# Should print "Simple mixer control 'BTVolume',0 ..."
+
+# Look for the disabled-extension log line
+sudo journalctl -u mopidy -b | grep -i 'Mixer (AlsaMixer) initialization error'
+```
+Quick fix — restart Mopidy now that the control exists:
+```bash
+sudo systemctl restart mopidy
+```
+Permanent fix — make sure `bt-softvol-init.service` actually succeeds at boot. Symptoms of failure: `systemctl status bt-softvol-init` shows `inactive (dead)` with `Dependency failed` or a non-zero exit. Causes: BlueALSA restarted between init and Mopidy start (the `bluealsa-override.conf` `ExecStartPost` used to call `systemctl restart mopidy`, which started Mopidy too early — fixed by switching to `try-restart`). Re-deploy the latest `bluealsa-override.conf` and `bt-softvol-init.service` from this repo.
 
 ### Iris web UI not loading
 ```bash

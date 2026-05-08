@@ -1,19 +1,36 @@
 # Initialize the softvol "BTVolume" ALSA control on boot
 # softvol is lazy — the control only exists after audio first plays through it.
 # Without this, Mopidy-ALSAMixer can't find the control and the volume slider
-# won't appear in Iris.
+# won't appear in Iris. Worse: Mopidy disables a failed extension permanently
+# until the next restart, so a single missed init breaks volume for the session.
+#
+# Retries until aplay through btvolume succeeds (BT must be connected first).
+# Uses Wants= (not Requires=) on bt-auto-connect so a transient BT failure
+# doesn't permanently skip this unit.
 #
 # Copy to /etc/systemd/system/bt-softvol-init.service
 
 [Unit]
 Description=Initialize BTVolume softvol ALSA control
-After=bt-auto-connect.service
-Requires=bt-auto-connect.service
+After=bt-auto-connect.service bluealsa.service
+Wants=bt-auto-connect.service bluealsa.service
 Before=mopidy.service
 
 [Service]
 Type=oneshot
-ExecStart=/usr/bin/aplay -D btvolume /usr/share/sounds/alsa/Front_Center.wav
+# 60 attempts × 5s = 5 min window. Each attempt re-tries BT connect then aplay.
+# First successful aplay materializes the BTVolume softvol control.
+ExecStart=/bin/bash -c '\
+  for i in $(seq 1 60); do \
+    bluetoothctl connect AE:EC:81:96:06:B7 >/dev/null 2>&1; \
+    if /usr/bin/aplay -D btvolume /usr/share/sounds/alsa/Front_Center.wav >/dev/null 2>&1; then \
+      logger "bt-softvol-init: BTVolume initialized after $i attempts"; \
+      exit 0; \
+    fi; \
+    sleep 5; \
+  done; \
+  logger "bt-softvol-init: failed after 60 attempts"; \
+  exit 1'
 RemainAfterExit=yes
 
 [Install]
