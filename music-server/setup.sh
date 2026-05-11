@@ -130,6 +130,12 @@ echo "  -> /etc/systemd/system/bt-auto-connect.service (MAC: $C50BT_MAC)"
 cp "$SCRIPT_DIR/bt-softvol-init.service" /etc/systemd/system/bt-softvol-init.service
 echo "  -> /etc/systemd/system/bt-softvol-init.service"
 
+# mopidy-pipeline-watchdog: restart playback if gstreamer pipeline dies
+install -m 755 "$SCRIPT_DIR/mopidy-pipeline-watchdog.sh" /usr/local/bin/mopidy-pipeline-watchdog.sh
+cp "$SCRIPT_DIR/mopidy-pipeline-watchdog.service" /etc/systemd/system/mopidy-pipeline-watchdog.service
+echo "  -> /usr/local/bin/mopidy-pipeline-watchdog.sh"
+echo "  -> /etc/systemd/system/mopidy-pipeline-watchdog.service"
+
 # Mopidy systemd override:
 #  - Use pip-installed mopidy 4.x binary (not apt's 3.x at /usr/bin/mopidy)
 #  - Include /etc/mopidy/conf.d for secrets overlay (spotify credentials)
@@ -182,6 +188,9 @@ systemctl restart mopidy
 
 systemctl enable raspotify
 systemctl restart raspotify
+
+systemctl enable mopidy-pipeline-watchdog
+systemctl restart mopidy-pipeline-watchdog
 
 # Only enable bt-auto-connect if MAC was changed from placeholder
 if [ "$C50BT_MAC" != "XX:XX:XX:XX:XX:XX" ]; then
