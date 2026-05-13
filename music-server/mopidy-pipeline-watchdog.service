@@ -1,6 +1,7 @@
-# Watchdog that restarts Mopidy playback when its gstreamer pipeline dies
-# with "Internal data stream error" (BT pipeline goes stale, state stuck
-# "playing", no audio out). Rate-limited inside the script.
+# Watchdog that auto-recovers when Mopidy's gstreamer pipeline emits any
+# "GStreamer error" but playback stays "playing" (no audio out). Tiered:
+# stop/play first, then `systemctl restart mopidy` on the 3rd strike inside
+# the rolling window. Rate-limited inside the script.
 #
 # Copy to /etc/systemd/system/mopidy-pipeline-watchdog.service
 
