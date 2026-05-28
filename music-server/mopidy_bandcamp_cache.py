@@ -22,7 +22,7 @@ import time
 from pathlib import Path
 
 CACHE_DIR = Path("/var/cache/mopidy/bandcamp")
-TTL_SECONDS = 30 * 24 * 60 * 60
+TTL_SECONDS = 365 * 24 * 60 * 60
 
 logger = logging.getLogger(__name__)
 

@@ -84,7 +84,7 @@ fi
 # Install bandcamp disk cache addon. Upstream mopidy-bandcamp makes one HTTPS
 # round-trip per lookup with no cache; loading a 67-track playlist takes ~38s
 # on the Pi Zero 2 W (Iris times out → 0 tracks displayed). Cache survives
-# restarts and is invalidated after 30 days.
+# restarts and is invalidated after 1 year.
 if [ -d "$BANDCAMP_DIR" ]; then
   install -m 644 "$SCRIPT_DIR/mopidy_bandcamp_cache.py" "$BANDCAMP_DIR/_cache.py"
   if ! grep -q "from . import _cache" "$BANDCAMP_INIT"; then
