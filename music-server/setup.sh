@@ -71,12 +71,27 @@ pip3 install --break-system-packages \
 
 # Patch Mopidy-Bandcamp: pydantic v2 rejects musicbrainz_id="" (empty string is not a
 # valid UUID). Replace with None. Re-apply after upgrading Mopidy-Bandcamp.
-BANDCAMP_LIB=$(python3 -c "import mopidy_bandcamp; import os; print(os.path.dirname(mopidy_bandcamp.__file__))" 2>/dev/null)/library.py
+BANDCAMP_DIR=$(python3 -c "import mopidy_bandcamp; import os; print(os.path.dirname(mopidy_bandcamp.__file__))" 2>/dev/null)
+BANDCAMP_LIB="$BANDCAMP_DIR/library.py"
+BANDCAMP_INIT="$BANDCAMP_DIR/__init__.py"
 if [ -f "$BANDCAMP_LIB" ]; then
   sed -i 's/musicbrainz_id=""/musicbrainz_id=None/g' "$BANDCAMP_LIB"
   echo "  Patched mopidy-bandcamp: musicbrainz_id=\"\" -> None"
 else
   echo "  WARNING: mopidy-bandcamp library.py not found at $BANDCAMP_LIB — patch skipped"
+fi
+
+# Install bandcamp disk cache addon. Upstream mopidy-bandcamp makes one HTTPS
+# round-trip per lookup with no cache; loading a 67-track playlist takes ~38s
+# on the Pi Zero 2 W (Iris times out → 0 tracks displayed). Cache survives
+# restarts and is invalidated after 30 days.
+if [ -d "$BANDCAMP_DIR" ]; then
+  install -m 644 "$SCRIPT_DIR/mopidy_bandcamp_cache.py" "$BANDCAMP_DIR/_cache.py"
+  if ! grep -q "from . import _cache" "$BANDCAMP_INIT"; then
+    echo "from . import _cache  # noqa: F401  -- disk cache addon" >> "$BANDCAMP_INIT"
+  fi
+  install -d -o mopidy -g audio -m 755 /var/cache/mopidy/bandcamp
+  echo "  Installed mopidy-bandcamp disk cache (cache dir: /var/cache/mopidy/bandcamp)"
 fi
 
 # --- 5. Copy config files ---
