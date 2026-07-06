@@ -32,6 +32,9 @@ apt install -y \
   bluez-alsa-utils \
   mopidy \
   python3-pip
+# --no-install-recommends: gstreamer1.0-plugins-bad pulls in ~40 optional
+# codec/GUI libs we don't need — we only want the `watchdog` element.
+apt install -y --no-install-recommends gstreamer1.0-plugins-bad
 
 # --- 2. Raspotify ---
 echo "[2/9] Installing Raspotify..."
