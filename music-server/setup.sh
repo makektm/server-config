@@ -154,6 +154,22 @@ cp "$SCRIPT_DIR/mopidy-pipeline-watchdog.service" /etc/systemd/system/mopidy-pip
 echo "  -> /usr/local/bin/mopidy-pipeline-watchdog.sh"
 echo "  -> /etc/systemd/system/mopidy-pipeline-watchdog.service"
 
+# mopidy-spotify-login-watchdog: restart mopidy if Spotify OAuth login gets
+# stuck "Not logged in" (boot-race — mopidy-spotify never retries on its own)
+install -m 755 "$SCRIPT_DIR/mopidy-spotify-login-watchdog.sh" /usr/local/bin/mopidy-spotify-login-watchdog.sh
+cp "$SCRIPT_DIR/mopidy-spotify-login-watchdog.service" /etc/systemd/system/mopidy-spotify-login-watchdog.service
+echo "  -> /usr/local/bin/mopidy-spotify-login-watchdog.sh"
+echo "  -> /etc/systemd/system/mopidy-spotify-login-watchdog.service"
+
+# healthcheck.sh: one-shot status report (services, resources, live Spotify probe)
+install -m 755 "$SCRIPT_DIR/healthcheck.sh" /usr/local/bin/music-server-healthcheck
+echo "  -> /usr/local/bin/music-server-healthcheck"
+
+# Iris system-actions sudoers rule (restart/upgrade/scan buttons in the Iris UI)
+install -m 440 -o root -g root "$SCRIPT_DIR/mopidy-iris-sudoers" /etc/sudoers.d/mopidy-iris
+visudo -c -f /etc/sudoers.d/mopidy-iris || { echo "ERROR: mopidy-iris-sudoers failed validation, removing it"; rm -f /etc/sudoers.d/mopidy-iris; }
+echo "  -> /etc/sudoers.d/mopidy-iris"
+
 # Mopidy systemd override:
 #  - Use pip-installed mopidy 4.x binary (not apt's 3.x at /usr/bin/mopidy)
 #  - Include /etc/mopidy/conf.d for secrets overlay (spotify credentials)
@@ -209,6 +225,9 @@ systemctl restart raspotify
 
 systemctl enable mopidy-pipeline-watchdog
 systemctl restart mopidy-pipeline-watchdog
+
+systemctl enable mopidy-spotify-login-watchdog
+systemctl restart mopidy-spotify-login-watchdog
 
 # Only enable bt-auto-connect if MAC was changed from placeholder
 if [ "$C50BT_MAC" != "XX:XX:XX:XX:XX:XX" ]; then

@@ -1,0 +1,16 @@
+# Allows the `mopidy` user to run Mopidy-Iris's system-actions script
+# (Iris UI "Restart Mopidy" / "Upgrade Iris" / "Local scan" buttons) without
+# a password prompt. Iris's own privilege model expects this rule to exist —
+# without it, every Iris system action fails with:
+#   "Password-less access to .../mopidy_iris/system.sh was refused."
+# and the only way to restart Mopidy is SSH + `sudo systemctl restart mopidy`.
+#
+# system.sh itself internally shells out to `sudo service mopidy restart` /
+# `sudo python3 -m pip install --upgrade mopidy-iris` / `sudo mopidyctl local
+# scan` — those nested sudo calls succeed for free once this rule elevates
+# the outer invocation to root (root's own default sudoers entry covers them).
+#
+# Install to /etc/sudoers.d/mopidy-iris, mode 0440, owned by root. Never edit
+# /etc/sudoers directly for this. Validate with `sudo visudo -c` after
+# installing — a syntax error here can break sudo for every user.
+mopidy ALL=(ALL) NOPASSWD: /usr/local/lib/python3.13/dist-packages/mopidy_iris/system.sh

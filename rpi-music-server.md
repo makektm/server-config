@@ -255,6 +255,8 @@ Then test:
 - **Restarting BlueALSA drops BT + causes Mopidy/Raspotify conflict** — `systemctl restart bluealsa` disconnects the C50BT. Mopidy's GStreamer pipeline then enters an error loop repeatedly trying to grab the BlueALSA device, which fights with Raspotify (both can't hold the single-stream PCM). After any BlueALSA restart, always run: `bluetoothctl connect AE:EC:81:96:06:B7 && sudo systemctl restart mopidy`.
 - **Two interfaces** — Spotify is controlled from the Spotify app (cast), Bandcamp from the Iris web UI. No unified interface, but both output to the same speaker.
 - **Spotify requires Premium** — free tier does not support Spotify Connect.
+- **Boot race: Mopidy-Spotify OAuth login never retries after failing once** — `network-online.target` reporting active doesn't guarantee DNS/routing is actually usable yet. If Mopidy starts before the network is truly ready, `mopidy_spotify.web`'s token fetch exhausts its 0.5/1/2s retry backoff, logs `OAuth token refresh failed: Unknown error`, and gives up — permanently, for that process's whole lifetime. Every subsequent search/browse/add-to-queue then fails silently with `mopidy_spotify.lookup Not logged in` in the log (Iris shows "Failed to add some tracks"), even though the credentials and network are fine — a fresh Mopidy process re-authenticates in ~2 seconds. `mopidy-spotify-login-watchdog.service` watches for this pattern (2 strikes in a 10-minute window) and runs `systemctl restart mopidy` automatically, same tiered approach as the pipeline watchdog. (2026-08-20)
+- **Iris system actions need a sudoers rule that isn't installed by pip** — the "Restart Mopidy" / "Upgrade Iris" / "Local scan" buttons in the Iris UI shell out to `mopidy_iris/system.sh` via `sudo`, which fails with `Password-less access to .../system.sh was refused` unless `/etc/sudoers.d/mopidy-iris` grants the `mopidy` user a NOPASSWD rule for that exact script. Neither `pip install mopidy-iris` nor Mopidy itself sets this up — `setup.sh` now installs `mopidy-iris-sudoers` for it. Without it, restarting Mopidy always requires SSH.
 
 ## Troubleshooting
 
@@ -379,6 +381,32 @@ journalctl -u mopidy --no-pager -n 30
 ss -tlnp | grep 6680
 ```
 
+### "Mopidy: Failed to add some tracks" in Iris (Spotify)
+Mopidy-Spotify's OAuth login failed once (usually right after boot, from a network race) and never retried — it's been silently rejecting every lookup since. Diagnose:
+```bash
+# Look for the stuck-login signature
+sudo journalctl -u mopidy --since "15 min ago" | grep -i "not logged in\|oauth token refresh failed"
+
+# Confirm: does a fresh process log in fine? (proves creds/network are OK)
+sudo -u mopidy timeout 10 /usr/local/bin/mopidy \
+  --config /usr/share/mopidy/conf.d:/etc/mopidy/conf.d:/etc/mopidy/mopidy.conf -v 2>&1 \
+  | grep -i "logged into spotify"
+```
+Fix — restart Mopidy:
+```bash
+sudo systemctl restart mopidy
+```
+`mopidy-spotify-login-watchdog.service` does this automatically now (2 strikes in 10 minutes). If it's not installed/enabled yet, re-run `setup.sh` or copy `mopidy-spotify-login-watchdog.sh`/`.service` from this repo manually.
+
+### One-shot status check
+Instead of running the above commands by hand one at a time:
+```bash
+/usr/local/bin/music-server-healthcheck
+# or, from this repo without deploying it first:
+ssh pi@192.168.1.186 bash -s < music-server/healthcheck.sh
+```
+Reports service status, memory/disk/throttling, Bluetooth connection, cache sizes, a live Spotify auth probe, and a scan for known error patterns in the last 15 minutes. Exits non-zero if anything failed.
+
 ### Need to start fresh
 ```bash
 # Stop all music services
@@ -404,4 +432,12 @@ All config files are in the `music-server/` directory:
 | `raspotify-override.conf` | `/etc/systemd/system/raspotify.service.d/override.conf` |
 | `bluealsa-override.conf` | `/etc/systemd/system/bluealsa.service.d/override.conf` |
 | `bt-auto-connect.service` | `/etc/systemd/system/bt-auto-connect.service` |
+| `bt-softvol-init.service` | `/etc/systemd/system/bt-softvol-init.service` |
+| `mopidy_bandcamp_cache.py` | `<mopidy_bandcamp pkg dir>/_cache.py` |
+| `mopidy-pipeline-watchdog.sh` | `/usr/local/bin/mopidy-pipeline-watchdog.sh` |
+| `mopidy-pipeline-watchdog.service` | `/etc/systemd/system/mopidy-pipeline-watchdog.service` |
+| `mopidy-spotify-login-watchdog.sh` | `/usr/local/bin/mopidy-spotify-login-watchdog.sh` |
+| `mopidy-spotify-login-watchdog.service` | `/etc/systemd/system/mopidy-spotify-login-watchdog.service` |
+| `mopidy-iris-sudoers` | `/etc/sudoers.d/mopidy-iris` |
+| `healthcheck.sh` | `/usr/local/bin/music-server-healthcheck` |
 | `setup.sh` | Run once with `sudo bash setup.sh` |

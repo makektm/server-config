@@ -1,0 +1,21 @@
+# Watchdog that auto-recovers when Mopidy-Spotify's OAuth login gets stuck
+# in a "Not logged in" state (usually from a boot-time network race) and
+# never retries on its own. Tiered: `systemctl restart mopidy` on the 2nd
+# strike inside a 10-minute rolling window, then bails and leaves it for a
+# human if that doesn't clear it.
+#
+# Copy to /etc/systemd/system/mopidy-spotify-login-watchdog.service
+
+[Unit]
+Description=Mopidy Spotify login watchdog
+After=mopidy.service
+Wants=mopidy.service
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/mopidy-spotify-login-watchdog.sh
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
