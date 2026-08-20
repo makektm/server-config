@@ -13,4 +13,10 @@
 # Install to /etc/sudoers.d/mopidy-iris, mode 0440, owned by root. Never edit
 # /etc/sudoers directly for this. Validate with `sudo visudo -c` after
 # installing — a syntax error here can break sudo for every user.
+#
+# The path below is an example for the current Python 3.13 install layout —
+# setup.sh resolves the real path at install time (`python3 -c "import
+# mopidy_iris..."`) and substitutes it in, so this stays correct across a
+# future Python version bump. If installing by hand, replace it with the
+# output of that same command.
 mopidy ALL=(ALL) NOPASSWD: /usr/local/lib/python3.13/dist-packages/mopidy_iris/system.sh

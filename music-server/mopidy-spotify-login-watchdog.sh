@@ -47,7 +47,13 @@ restart_mopidy() {
   fi
 }
 
-journalctl -fu mopidy -o cat --since now | while IFS= read -r line; do
+# A small backlog (not `--since now`) covers the gap between mopidy.service
+# being forked and this watchdog's own journalctl -f actually attaching —
+# under boot-time CPU contention that gap could otherwise swallow the one
+# OAuth-failure line this whole script exists to catch. Replaying up to 20s
+# of old lines on a watchdog restart is harmless: the state-file rate limit
+# below still caps actual `systemctl restart mopidy` calls.
+journalctl -fu mopidy -o cat --since "-20 seconds" | while IFS= read -r line; do
   case "$line" in
     *"Logged into Spotify Web API"*)
       strikes=0

@@ -166,9 +166,21 @@ install -m 755 "$SCRIPT_DIR/healthcheck.sh" /usr/local/bin/music-server-healthch
 echo "  -> /usr/local/bin/music-server-healthcheck"
 
 # Iris system-actions sudoers rule (restart/upgrade/scan buttons in the Iris UI)
-install -m 440 -o root -g root "$SCRIPT_DIR/mopidy-iris-sudoers" /etc/sudoers.d/mopidy-iris
-visudo -c -f /etc/sudoers.d/mopidy-iris || { echo "ERROR: mopidy-iris-sudoers failed validation, removing it"; rm -f /etc/sudoers.d/mopidy-iris; }
-echo "  -> /etc/sudoers.d/mopidy-iris"
+# Resolve the actual install path rather than trusting the tracked file's
+# hardcoded example path — same reasoning as BANDCAMP_DIR above, since this
+# moves with the Python version (e.g. a future Trixie -> Forky bump).
+IRIS_SYSTEM_SH=$(python3 -c "import mopidy_iris, os; print(os.path.join(os.path.dirname(mopidy_iris.__file__), 'system.sh'))" 2>/dev/null)
+if [ -n "$IRIS_SYSTEM_SH" ] && [ -f "$IRIS_SYSTEM_SH" ]; then
+  sed "s|/usr/local/lib/python3.13/dist-packages/mopidy_iris/system.sh|$IRIS_SYSTEM_SH|" \
+    "$SCRIPT_DIR/mopidy-iris-sudoers" > /etc/sudoers.d/mopidy-iris
+  chown root:root /etc/sudoers.d/mopidy-iris
+  chmod 440 /etc/sudoers.d/mopidy-iris
+  visudo -c -f /etc/sudoers.d/mopidy-iris || { echo "ERROR: mopidy-iris-sudoers failed validation, removing it"; rm -f /etc/sudoers.d/mopidy-iris; }
+  echo "  -> /etc/sudoers.d/mopidy-iris ($IRIS_SYSTEM_SH)"
+else
+  echo "  WARNING: could not resolve mopidy_iris install path — skipping sudoers rule."
+  echo "  Iris's Restart/Upgrade/Local-scan buttons will fail until this is added manually."
+fi
 
 # Mopidy systemd override:
 #  - Use pip-installed mopidy 4.x binary (not apt's 3.x at /usr/bin/mopidy)
@@ -217,17 +229,22 @@ systemctl enable bluealsa
 systemctl restart bluealsa
 
 systemctl enable bt-softvol-init
-systemctl enable mopidy
-systemctl restart mopidy
 
-systemctl enable raspotify
-systemctl restart raspotify
-
+# Enable and start both watchdogs BEFORE (re)starting mopidy below, so their
+# `journalctl -fu mopidy` tail is already attached before mopidy attempts its
+# Spotify OAuth login — otherwise a first-run boot-time login failure could
+# happen unobserved, before the watchdog that exists to catch it is even up.
 systemctl enable mopidy-pipeline-watchdog
 systemctl restart mopidy-pipeline-watchdog
 
 systemctl enable mopidy-spotify-login-watchdog
 systemctl restart mopidy-spotify-login-watchdog
+
+systemctl enable mopidy
+systemctl restart mopidy
+
+systemctl enable raspotify
+systemctl restart raspotify
 
 # Only enable bt-auto-connect if MAC was changed from placeholder
 if [ "$C50BT_MAC" != "XX:XX:XX:XX:XX:XX" ]; then

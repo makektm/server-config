@@ -37,9 +37,7 @@ done
 
 echo
 echo "[Resources]"
-read -r _ _ mem_used mem_free _ mem_avail < <(free -m | awk '/^Mem:/{print $1,$2,$3,$4,$6,$7}')
-mem_total=$(free -m | awk '/^Mem:/{print $2}')
-mem_avail=$(free -m | awk '/^Mem:/{print $7}')
+read -r mem_total mem_avail < <(free -m | awk '/^Mem:/{print $2, $7}')
 if [ "$mem_avail" -lt 50 ]; then
   fail "Memory: ${mem_avail}MiB available of ${mem_total}MiB (low)"
 else
@@ -78,17 +76,25 @@ echo
 echo "[Caches]"
 if [ -d /var/cache/mopidy/spotify ]; then
   spotify_cache_mb=$(sudo du -sm /var/cache/mopidy/spotify 2>/dev/null | cut -f1)
-  cap_mb=$(grep -A20 '^\[spotify\]' /etc/mopidy/mopidy.conf 2>/dev/null | grep -m1 '^cache_size' | cut -d= -f2 | tr -d ' ')
-  cap_mb=${cap_mb:-8192}
-  if [ "$spotify_cache_mb" -ge "$cap_mb" ]; then
-    warn "spotify audio cache: ${spotify_cache_mb}MiB (at its ${cap_mb}MiB cap — eating disk space)"
+  if [ -z "$spotify_cache_mb" ]; then
+    warn "spotify audio cache: could not read size (needs passwordless sudo — check with 'sudo -n true')"
   else
-    pass "spotify audio cache: ${spotify_cache_mb}MiB (cap ${cap_mb}MiB)"
+    cap_mb=$(grep -A20 '^\[spotify\]' /etc/mopidy/mopidy.conf 2>/dev/null | grep -m1 '^cache_size' | cut -d= -f2 | tr -d ' ')
+    cap_mb=${cap_mb:-8192}
+    if [ "$spotify_cache_mb" -ge "$cap_mb" ]; then
+      warn "spotify audio cache: ${spotify_cache_mb}MiB (at its ${cap_mb}MiB cap — eating disk space)"
+    else
+      pass "spotify audio cache: ${spotify_cache_mb}MiB (cap ${cap_mb}MiB)"
+    fi
   fi
 fi
 if [ -d /var/cache/mopidy/bandcamp ]; then
   bc_cache_mb=$(sudo du -sm /var/cache/mopidy/bandcamp 2>/dev/null | cut -f1)
-  pass "bandcamp cache: ${bc_cache_mb}MiB"
+  if [ -z "$bc_cache_mb" ]; then
+    warn "bandcamp cache: could not read size (needs passwordless sudo — check with 'sudo -n true')"
+  else
+    pass "bandcamp cache: ${bc_cache_mb}MiB"
+  fi
 fi
 
 echo
